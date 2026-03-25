@@ -1,135 +1,160 @@
 # flutter_usbserial
 
-A Flutter plugin for USB serial communication on Android, powered by the [usb-serial](https://github.com/DeveloperRejaul/usb-serial) library. This plugin provides a high-level API to interact with USB serial devices, including specialized support for Modbus soil sensors.
+A high-performance Flutter plugin for USB serial communication on Android. This plugin is a wrapper around the [usb-serial](https://github.com/DeveloperRejaul/usb-serial) Android library, providing a simple and robust API for interacting with USB devices, including specialized support for Modbus soil sensors.
+
+[![pub package](https://img.shields.io/pub/v/flutter_usbserial.svg)](https://pub.dev/packages/flutter_usbserial)
+[![license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/DeveloperRejaul/usb-serial/blob/main/LICENSE)
 
 ## Features
 
-- **Device Management**: List connected USB devices and manage permissions.
-- **Serial Communication**: Connect, disconnect, read, and write raw serial data.
-- **Interval Reading**: Stream raw data or soil sensor data at specified intervals.
-- **Soil Sensor Support**: Built-in utility for reading 8-in-1 Modbus soil sensors.
+- **Device Discovery**: List all connected USB devices with detailed information (VID, PID, Serial, etc.).
+- **Permission Management**: Easy-to-use API for checking and requesting USB permissions.
+- **Serial Communication**: 
+    - Support for multiple baud rates.
+    - Synchronous and asynchronous (Interval-based) reading.
+    - Robust write operations.
+- **Specialized Utils**: Built-in support for 8-in-1 Modbus Soil Sensors (Moisture, Temperature, EC, PH, N, P, K, Salinity).
 
 ## Installation
 
-Add `flutter_usbserial` to your `pubspec.yaml`:
+Add this to your `pubspec.yaml` file:
 
 ```yaml
 dependencies:
-  flutter_usbserial:
-    path: ../flutter_usbserial # Or use git/pub version when available
+  flutter_usbserial: ^0.0.1
 ```
 
-### Android Setup
+Or run the following command in your terminal:
 
-The library requires a minimum SDK version of 24. Ensure your `android/app/build.gradle` (or `android/build.gradle.kts` in the plugin) reflects this.
+```bash
+flutter pub add flutter_usbserial
+```
 
-The plugin automatically handles the necessary dependencies from JitPack.
+### Android Configuration
 
-## Usage
+Ensure your `minSdkVersion` is set to **24** or higher in your `android/app/build.gradle`.
 
-### 1. Initialize and List Devices
+```gradle
+android {
+    defaultConfig {
+        minSdkVersion 24
+    }
+}
+```
+
+## Documentation & Usage
+
+### 1. Initialize and Discovery
 
 ```dart
-final _usbPlugin = FlutterUsbserial();
+final usb = FlutterUsbserial();
 
-List<UsbDeviceInfo> devices = await _usbPlugin.getDeviceList();
+// Get list of connected devices
+List<UsbDeviceInfo> devices = await usb.getDeviceList();
+
 for (var device in devices) {
-  print("Found device: ${device.productName} (VID: ${device.vendorId}, PID: ${device.productId})");
+  print("Device: ${device.productName}, VID: ${device.vendorId}, PID: ${device.productId}");
 }
 ```
 
-### 2. Request Permission and Connect
+### 2. Connection Handling
 
 ```dart
-if (devices.isNotEmpty) {
-  bool hasPerm = await _usbPlugin.hasPermission(devices[0]);
-  if (!hasPerm) {
-    bool granted = await _usbPlugin.requestPermission(devices[0]);
-    if (!granted) return;
-  }
+// Check permission
+bool hasPermission = await usb.hasPermission(devices[0]);
 
-  bool connected = await _usbPlugin.connect(devices[0], baudRate: 9600);
-  if (connected) {
-    print("Connected successfully!");
-  }
+if (!hasPermission) {
+  // Request permission
+  bool granted = await usb.requestPermission(devices[0]);
+  if (!granted) return;
 }
+
+// Connect with baud rate
+bool connected = await usb.connect(devices[0], baudRate: 9600);
 ```
 
-### 3. Read and Write Data
+### 3. Reading and Writing Data
 
-#### One-time Read/Write
+#### Synchronous Write
 ```dart
-// Write data
-await _usbPlugin.write(Uint8List.fromList([0x01, 0x02, 0x03]));
-
-// Read data
-Uint8List? data = await _usbPlugin.read(bufferSize: 1024, timeout: 1000);
+await usb.write(Uint8List.fromList([0x01, 0x03, 0x00, 0x00, 0x00, 0x08, 0x44, 0x0C]));
 ```
 
-#### Streaming Raw Data
+#### Synchronous Read
 ```dart
-// Listen to the stream
-_usbPlugin.rawDataStream.listen((data) {
-  print("Received raw data: $data");
+Uint8List? response = await usb.read(bufferSize: 1024, timeout: 1000);
+```
+
+#### Real-time Streaming (Interval)
+```dart
+// 1. Start listening to the stream
+usb.rawDataStream.listen((data) {
+  print("Received: $data");
 });
 
-// Start the interval reader
-await _usbPlugin.startRawReadInterval(intervalMs: 500);
+// 2. Start the interval reader
+await usb.startRawReadInterval(intervalMs: 500);
 
-// Stop later
-await _usbPlugin.stopRawReadInterval();
+// 3. Stop when done
+await usb.stopRawReadInterval();
 ```
 
-### 4. Specialized Soil Sensor Support
+### 4. Soil Sensor (Modbus) Utility
 
-The plugin includes a dedicated utility for Modbus soil sensors (8-in-1).
+This plugin includes a dedicated helper for standard 8-in-1 soil sensors.
 
-#### One-time Soil Data Read
 ```dart
-Map<String, double?>? soilData = await _usbPlugin.utils.readSoilData(
-  slaveId: 1,
-  startAddress: 0x0000,
+// Start streaming soil data
+usb.utils.soilDataStream.listen((data) {
+  print("Moisture: ${data['moisture']}%");
+  print("Temperature: ${data['temperature']}°C");
+  print("PH: ${data['ph']}");
+});
+
+await usb.utils.startSoilReadInterval(
+  intervalMs: 1000, 
+  slaveId: 1
 );
-
-if (soilData != null) {
-  print("Soil Moisture: ${soilData['moisture']}");
-  print("Soil Temp: ${soilData['temperature']}");
-}
-```
-
-#### Streaming Soil Data
-```dart
-_usbPlugin.utils.soilDataStream.listen((data) {
-  print("Soil Data Update: $data");
-});
-
-await _usbPlugin.utils.startSoilReadInterval(intervalMs: 2000);
 ```
 
 ## API Reference
 
-### `FlutterUsbserial`
+### `FlutterUsbserial` Methods
 
 | Method | Description |
 | --- | --- |
-| `getDeviceList()` | Returns a list of `UsbDeviceInfo`. |
-| `hasPermission(device)` | Checks if permission is granted. |
-| `requestPermission(device)` | Requests USB permission. |
-| `connect(device, {baudRate})` | Connects to a device. |
-| `disconnect()` | Closes the connection. |
-| `isConnected()` | Returns true if connected. |
-| `write(data)` | Writes bytes to the port. |
-| `read({bufferSize, timeout})` | Reads bytes from the port. |
-| `startRawReadInterval(...)` | Starts the interval reader. |
-| `stopRawReadInterval()` | Stops the interval reader. |
+| `getDeviceList()` | Returns `Future<List<UsbDeviceInfo>>` of connected devices. |
+| `hasPermission(device)` | Returns `Future<bool>` if the app has access. |
+| `requestPermission(device)` | Requests USB permission via system dialog. |
+| `connect(device, {baudRate})` | Connects to the device. Default baud: 9600. |
+| `disconnect()` | Closes the active connection. |
+| `isConnected()` | Checks if a connection is active. |
+| `getConnectedDevice()` | Returns the current `UsbDeviceInfo` or null. |
+| `write(data)` | Sends `Uint8List` data to the serial port. |
+| `read({bufferSize, timeout})` | Reads data once from the port. |
+| `startRawReadInterval(...)` | Starts a recurring read loop and emits to `rawDataStream`. |
+| `stopRawReadInterval()` | Stops the raw read loop. |
 
-### `Utils` (Soil Sensors)
+### `Utils` (Soil Sensor) Methods
 
 | Method | Description |
 | --- | --- |
-| `readSoilData(...)` | Reads Modbus soil data once. |
-| `startSoilReadInterval(...)`| Starts interval soil data reading. |
-| `stopSoilReadInterval()` | Stops interval soil data reading. |
+| `readSoilData(...)` | Performs a single Modbus read for soil parameters. |
+| `startSoilReadInterval(...)`| Starts a loop and emits parsed maps to `soilDataStream`. |
+| `stopSoilReadInterval()` | Stops the soil sensor loop. |
+
+## Supported Sensors (8-in-1)
+- Moisture
+- Temperature
+- Conductivity (EC)
+- PH
+- Nitrogen (N)
+- Phosphorus (P)
+- Potassium (K)
+- Salinity
 
 ## Credits
-Based on the [usb-serial](https://github.com/DeveloperRejaul/usb-serial) Android library.
+This plugin is maintained by [MedinaTech](https://github.com/medinatech) and uses the [usb-serial](https://github.com/DeveloperRejaul/usb-serial) library.
+
+## License
+MIT License.
